@@ -3,7 +3,8 @@ pandas
 numpy
 yfinance
 plotly
-prophet
-requests
 transformers
 torch
+tensorflow
+scikit-learn
+requests
