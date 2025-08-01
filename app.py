@@ -26,7 +26,7 @@ NEWSAPI_KEY = "3087034a13564f75bfc769c0046e729c"
 # Initialize NLP summarizer (transformers)
 @st.cache_resource
 def load_summarizer():
-    return pipeline("summarization", model="facebook/bart-large-cnn")
+    return pipeline("summarization", model="sshleifer/distilbart-cnn-12-6")
 summarizer = load_summarizer()
 
 # --------------------------------------------
