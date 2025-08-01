@@ -8,3 +8,4 @@ torch
 tensorflow
 scikit-learn
 requests
+protobuf>=6.31.1
