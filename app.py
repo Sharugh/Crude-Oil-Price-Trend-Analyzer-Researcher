@@ -5,134 +5,87 @@ import numpy as np
 import plotly.graph_objs as go
 from transformers import pipeline
 import torch
+from sklearn.preprocessing import MinMaxScaler
+import tensorflow as tf
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense
 import requests
-
-# 🔒 Ignore protobuf + tf warnings
 import warnings
+
 warnings.filterwarnings("ignore")
 
-# ------------------------------------------
-# 🔑 Hardcoded NewsAPI Key
+# NewsAPI Key
 NEWSAPI_KEY = "3087034a13564f75bfc769c0046e729c"
 
-# ------------------------------------------
-# 1️⃣ Summarizer (PyTorch only)
+# ✅ Summarizer - PyTorch only
 @st.cache_resource
 def load_summarizer():
     return pipeline("summarization", model="facebook/bart-large-cnn", framework="pt")
 
 summarizer = load_summarizer()
 
-# ------------------------------------------
-# 2️⃣ User selects crude & range
-st.title("🌍 Crude Oil Price Trend + Research + Forecast")
-crude_options = ["CL=F", "BZ=F", "GC=F"]
-crude_choice = st.selectbox("Select Crude:", crude_options)
-date_range = st.selectbox(
-    "Select Range:", ["1mo", "3mo", "6mo", "1y", "5y"]
-)
+# UI
+st.title("🛢️ Crude Oil Research Dashboard")
+crude_choice = st.selectbox("Select Crude", ["CL=F", "BZ=F"])
+date_range = st.selectbox("Select Period", ["1mo", "3mo", "6mo", "1y"])
 
-# ------------------------------------------
-# 3️⃣ Load prices
-data = yf.download(crude_choice, period=date_range, interval="1d")
-if data.empty:
-    st.error("Could not load crude data.")
-    st.stop()
+# Get prices
+with st.spinner("Fetching prices..."):
+    df = yf.download(crude_choice, period=date_range)
+    df.reset_index(inplace=True)
 
-data.reset_index(inplace=True)
-st.subheader("📈 Price Trend")
+# Plot
 fig = go.Figure()
-fig.add_trace(go.Scatter(
-    x=data['Date'], y=data['Close'],
-    mode='lines+markers',
-    name=f"{crude_choice} Close Price"
-))
-fig.update_layout(
-    xaxis_title="Date",
-    yaxis_title="Price",
-    hovermode="x",
-    xaxis_rangeslider_visible=True
-)
-st.plotly_chart(fig, use_container_width=True)
+fig.add_trace(go.Scatter(x=df['Date'], y=df['Close'], mode='lines+markers'))
+fig.update_layout(title="Crude Prices", xaxis_rangeslider_visible=True)
+st.plotly_chart(fig)
 
-# ------------------------------------------
-# 4️⃣ Detailed rolling average hover
-data['Rolling5'] = data['Close'].rolling(window=5).mean()
-st.line_chart(data[['Close', 'Rolling5']].set_index(data['Date']))
+# Rolling
+df['Rolling5'] = df['Close'].rolling(5).mean()
+st.line_chart(df[['Close', 'Rolling5']].set_index(df['Date']))
 
-# ------------------------------------------
-# 5️⃣ News Research
-if st.button("🔍 Research: Why up or down?"):
-    st.info("Fetching articles...")
-    query = f"{crude_choice} crude oil news"
-    url = f"https://newsapi.org/v2/everything?q={query}&sortBy=publishedAt&pageSize=10&apiKey={NEWSAPI_KEY}"
-    res = requests.get(url)
-    if res.status_code == 200:
+# Research
+if st.button("Why up or down?"):
+    with st.spinner("Searching news..."):
+        url = f"https://newsapi.org/v2/everything?q=crude oil&sortBy=publishedAt&apiKey={NEWSAPI_KEY}"
+        res = requests.get(url)
         articles = res.json().get("articles", [])
-        text = " ".join([a['description'] or "" for a in articles])
-        if text.strip():
-            summary = summarizer(text, max_length=150, min_length=50, do_sample=False)
-            st.subheader("📑 Research Summary")
-            st.write(summary[0]['summary_text'])
-            st.subheader("🔗 Articles:")
-            for a in articles:
-                st.write(f"[{a['title']}]({a['url']})")
-        else:
-            st.warning("No descriptions found.")
-    else:
-        st.error(f"Error fetching news: {res.status_code}")
+        text = " ".join([a['description'] or "" for a in articles[:5]])
+        summary = summarizer(text, max_length=100, min_length=50)[0]['summary_text']
+        st.write(summary)
+        for a in articles:
+            st.write(f"[{a['title']}]({a['url']})")
 
-# ------------------------------------------
-# 6️⃣ Forecast with LSTM
-st.subheader("⏳ Forecast Next 14 Days")
-
-# Prepare data
-data_forecast = data[['Date', 'Close']].dropna()
-data_forecast.index = data_forecast['Date']
-data_forecast = data_forecast[['Close']]
-
-from sklearn.preprocessing import MinMaxScaler
-
-scaler = MinMaxScaler(feature_range=(0, 1))
-scaled_data = scaler.fit_transform(data_forecast)
+# Forecast
+st.subheader("⏳ LSTM Forecast")
+scaler = MinMaxScaler()
+scaled = scaler.fit_transform(df[['Close']].values)
 
 look_back = 5
-X_train, y_train = [], []
+X, y = [], []
+for i in range(look_back, len(scaled)):
+    X.append(scaled[i-look_back:i])
+    y.append(scaled[i])
 
-for i in range(look_back, len(scaled_data)-1):
-    X_train.append(scaled_data[i-look_back:i, 0])
-    y_train.append(scaled_data[i, 0])
+X, y = np.array(X), np.array(y)
 
-X_train, y_train = np.array(X_train), np.array(y_train)
-X_train = np.reshape(X_train, (X_train.shape[0], X_train.shape[1], 1))
-
-# LSTM
 model = Sequential()
-model.add(LSTM(units=50, return_sequences=True, input_shape=(X_train.shape[1],1)))
-model.add(LSTM(units=50))
+model.add(LSTM(30, input_shape=(look_back, 1)))
 model.add(Dense(1))
+model.compile(optimizer='adam', loss='mse')
 
-model.compile(optimizer='adam', loss='mean_squared_error')
-model.fit(X_train, y_train, epochs=5, batch_size=1, verbose=0)
+with st.spinner("Training model..."):
+    model.fit(X, y, epochs=1, batch_size=1, verbose=0)
 
-inputs = scaled_data[-look_back:]
-preds = []
+inputs = scaled[-look_back:]
+future = []
+for _ in range(10):
+    pred = model.predict(inputs.reshape(1, look_back, 1), verbose=0)
+    future.append(pred[0][0])
+    inputs = np.vstack((inputs[1:], pred))
 
-for _ in range(14):
-    input_reshaped = np.reshape(inputs, (1, look_back, 1))
-    pred = model.predict(input_reshaped, verbose=0)
-    preds.append(pred[0,0])
-    inputs = np.append(inputs[1:], pred, axis=0)
-
-forecast_prices = scaler.inverse_transform(np.array(preds).reshape(-1,1))
-future_dates = pd.date_range(start=data['Date'].iloc[-1], periods=15, freq='D')[1:]
-
-df_forecast = pd.DataFrame({'Date': future_dates, 'Forecast': forecast_prices.flatten()})
+forecast = scaler.inverse_transform(np.array(future).reshape(-1, 1))
+dates = pd.date_range(start=df['Date'].iloc[-1], periods=11, freq='D')[1:]
+df_forecast = pd.DataFrame({'Date': dates, 'Forecast': forecast.flatten()})
 st.line_chart(df_forecast.set_index('Date'))
 
-st.success("✅ Done!")
-
-# ------------------------------------------
-st.caption("🔬 Built with PyTorch NLP + LSTM forecasting.")
