@@ -1,192 +1,138 @@
-# -----------------------------------------------------------
-# CRUDE OIL TREND ANALYZER - ADVANCED VERSION - LSTM + DEEP NEWS INSIGHT
-# -----------------------------------------------------------
 import streamlit as st
+import yfinance as yf
 import pandas as pd
 import numpy as np
-import yfinance as yf
-import plotly.graph_objects as go
-import requests
+import plotly.graph_objs as go
 from transformers import pipeline
-from datetime import datetime, timedelta
-import tensorflow as tf
+import torch
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import LSTM, Dense, Dropout
-from sklearn.preprocessing import MinMaxScaler
+from tensorflow.keras.layers import LSTM, Dense
+import requests
 
-# -----------------------------------------------------------
-# CONFIG
-# -----------------------------------------------------------
-st.set_page_config(page_title="🛢️ Crude Oil Researcher", layout="wide")
-st.title("🛢️ Crude Oil Price Researcher - Next-Gen Version")
+# 🔒 Ignore protobuf + tf warnings
+import warnings
+warnings.filterwarnings("ignore")
 
-NEWSAPI_KEY = "3087034a13564f75bfc769c0046e729c"
+# ------------------------------------------
+# 🔑 Hardcoded NewsAPI Key
+NEWSAPI_KEY = "YOUR_NEWS_API_KEY"
 
+# ------------------------------------------
+# 1️⃣ Summarizer (PyTorch only)
 @st.cache_resource
 def load_summarizer():
     return pipeline("summarization", model="facebook/bart-large-cnn", framework="pt")
 
 summarizer = load_summarizer()
 
-# -----------------------------------------------------------
-# SIDEBAR FILTERS
-# -----------------------------------------------------------
-st.sidebar.header("⚙️ Settings")
-
-crude = st.sidebar.selectbox(
-    "Select Crude:",
-    ["Brent", "WTI"]
+# ------------------------------------------
+# 2️⃣ User selects crude & range
+st.title("🌍 Crude Oil Price Trend + Research + Forecast")
+crude_options = ["CL=F", "BZ=F", "GC=F"]
+crude_choice = st.selectbox("Select Crude:", crude_options)
+date_range = st.selectbox(
+    "Select Range:", ["1mo", "3mo", "6mo", "1y", "5y"]
 )
-symbol_map = {"Brent": "BZ=F", "WTI": "CL=F"}
-symbol = symbol_map[crude]
 
-time_label = st.sidebar.radio(
-    "Time Range:",
-    ["1M", "3M", "6M", "1Y", "5Y"], index=1
-)
-time_map = {"1M": "1mo", "3M": "3mo", "6M": "6mo", "1Y": "1y", "5Y": "5y"}
-period = time_map[time_label]
-
-show_volume = st.sidebar.checkbox("Show Volume", value=True)
-
-# -----------------------------------------------------------
-# FETCH PRICE DATA
-# -----------------------------------------------------------
-@st.cache_data(ttl=3600)
-def get_prices(symbol, period):
-    df = yf.download(symbol, period=period, interval="1d", auto_adjust=True)
-    df.reset_index(inplace=True)
-    df['Rolling_5D'] = df['Close'].rolling(window=5).mean()
-    df.dropna(inplace=True)
-    return df
-
-df = get_prices(symbol, period)
-
-if df.empty or len(df) < 5:
-    st.error("⚠️ Not enough data. Try larger time range.")
+# ------------------------------------------
+# 3️⃣ Load prices
+data = yf.download(crude_choice, period=date_range, interval="1d")
+if data.empty:
+    st.error("Could not load crude data.")
     st.stop()
 
-# -----------------------------------------------------------
-# PLOT PRICES
-# -----------------------------------------------------------
+data.reset_index(inplace=True)
+st.subheader("📈 Price Trend")
 fig = go.Figure()
-fig.add_trace(go.Scatter(x=df['Date'], y=df['Close'], mode='lines+markers', name='Close Price'))
-fig.add_trace(go.Scatter(x=df['Date'], y=df['Rolling_5D'], mode='lines', name='5D Rolling Avg', line=dict(dash='dot')))
-if show_volume:
-    fig.add_trace(go.Bar(x=df['Date'], y=df['Volume'], name='Volume', yaxis='y2'))
-
+fig.add_trace(go.Scatter(
+    x=data['Date'], y=data['Close'],
+    mode='lines+markers',
+    name=f"{crude_choice} Close Price"
+))
 fig.update_layout(
-    title=f"{crude} Crude Oil Price Trend",
-    hovermode='x',
-    xaxis=dict(
-        rangeselector=dict(
-            buttons=[
-                dict(count=1, label="1M", step="month", stepmode="backward"),
-                dict(count=3, label="3M", step="month", stepmode="backward"),
-                dict(count=6, label="6M", step="month", stepmode="backward"),
-                dict(count=1, label="1Y", step="year", stepmode="backward"),
-                dict(count=5, label="5Y", step="year", stepmode="backward"),
-                dict(step="all")
-            ]
-        ),
-        rangeslider=dict(visible=True),
-        type="date"
-    ),
-    yaxis=dict(title="Price (USD)"),
-    yaxis2=dict(overlaying='y', side='right', showgrid=False, title="Volume")
+    xaxis_title="Date",
+    yaxis_title="Price",
+    hovermode="x",
+    xaxis_rangeslider_visible=True
 )
 st.plotly_chart(fig, use_container_width=True)
 
-# -----------------------------------------------------------
-# DEEP RESEARCH ANALYSIS
-# -----------------------------------------------------------
-st.subheader("🔍 Market Intelligence: Why is price moving?")
+# ------------------------------------------
+# 4️⃣ Detailed rolling average hover
+data['Rolling5'] = data['Close'].rolling(window=5).mean()
+st.line_chart(data[['Close', 'Rolling5']].set_index(data['Date']))
 
-if st.button("Run Advanced Research"):
-    today = datetime.today().strftime('%Y-%m-%d')
-    week_ago = (datetime.today() - timedelta(days=14)).strftime('%Y-%m-%d')
-    url = f"https://newsapi.org/v2/everything?q={crude}+crude+oil+OR+OPEC+OR+geopolitics+OR+sanctions&from={week_ago}&to={today}&language=en&sortBy=publishedAt&apiKey={NEWSAPI_KEY}&pageSize=100"
-
-    r = requests.get(url)
-    if r.status_code == 200:
-        articles = r.json().get('articles', [])
-        if not articles:
-            st.warning("No news found.")
-        else:
-            all_texts = []
+# ------------------------------------------
+# 5️⃣ News Research
+if st.button("🔍 Research: Why up or down?"):
+    st.info("Fetching articles...")
+    query = f"{crude_choice} crude oil news"
+    url = f"https://newsapi.org/v2/everything?q={query}&sortBy=publishedAt&pageSize=10&apiKey={NEWSAPI_KEY}"
+    res = requests.get(url)
+    if res.status_code == 200:
+        articles = res.json().get("articles", [])
+        text = " ".join([a['description'] or "" for a in articles])
+        if text.strip():
+            summary = summarizer(text, max_length=150, min_length=50, do_sample=False)
+            st.subheader("📑 Research Summary")
+            st.write(summary[0]['summary_text'])
+            st.subheader("🔗 Articles:")
             for a in articles:
-                snippet = f"{a['title']}. {a.get('description','')}. {a.get('content','')}"
-                all_texts.append(snippet)
-
-            big_text = " ".join(all_texts)
-            big_text = big_text[:4500]  # handle max token limit
-
-            summary = summarizer(big_text, max_length=400, min_length=150, do_sample=False)[0]['summary_text']
-            st.success("### 📜 Detailed Market Analysis")
-            st.write(summary)
-
-            st.info("### 🔗 Top Headlines:")
-            for a in articles[:15]:
-                st.markdown(f"- [{a['title']}]({a['url']})")
+                st.write(f"[{a['title']}]({a['url']})")
+        else:
+            st.warning("No descriptions found.")
     else:
-        st.error("NewsAPI error. Check key or quota.")
+        st.error(f"Error fetching news: {res.status_code}")
 
-# -----------------------------------------------------------
-# LSTM FORECAST
-# -----------------------------------------------------------
-st.subheader("📈 Forecast Future Prices (LSTM)")
+# ------------------------------------------
+# 6️⃣ Forecast with LSTM
+st.subheader("⏳ Forecast Next 14 Days")
 
-if st.button("Run LSTM Forecast"):
-    if len(df) < 60:
-        st.warning("❌ Not enough data. Try longer period.")
-    else:
-        dataset = df[['Close']]
-        scaler = MinMaxScaler(feature_range=(0, 1))
-        scaled = scaler.fit_transform(dataset)
+# Prepare data
+data_forecast = data[['Date', 'Close']].dropna()
+data_forecast.index = data_forecast['Date']
+data_forecast = data_forecast[['Close']]
 
-        X_train, y_train = [], []
-        for i in range(60, len(scaled)):
-            X_train.append(scaled[i-60:i, 0])
-            y_train.append(scaled[i, 0])
+from sklearn.preprocessing import MinMaxScaler
 
-        X_train, y_train = np.array(X_train), np.array(y_train)
-        X_train = np.reshape(X_train, (X_train.shape[0], X_train.shape[1], 1))
+scaler = MinMaxScaler(feature_range=(0, 1))
+scaled_data = scaler.fit_transform(data_forecast)
 
-        model = Sequential()
-        model.add(LSTM(units=50, return_sequences=True, input_shape=(X_train.shape[1], 1)))
-        model.add(Dropout(0.2))
-        model.add(LSTM(units=50, return_sequences=True))
-        model.add(Dropout(0.2))
-        model.add(LSTM(units=50))
-        model.add(Dropout(0.2))
-        model.add(Dense(units=1))
+look_back = 5
+X_train, y_train = [], []
 
-        model.compile(optimizer='adam', loss='mean_squared_error')
-        with st.spinner('⏳ Training LSTM...'):
-            model.fit(X_train, y_train, epochs=7, batch_size=32, verbose=0)
+for i in range(look_back, len(scaled_data)-1):
+    X_train.append(scaled_data[i-look_back:i, 0])
+    y_train.append(scaled_data[i, 0])
 
-        # Predict future
-        inputs = scaled[-60:]
-        forecast = []
-        for _ in range(30):
-            X_test = np.reshape(inputs, (1, inputs.shape[0], 1))
-            pred = model.predict(X_test)
-            forecast.append(pred[0,0])
-            inputs = np.append(inputs, [[pred[0,0]]], axis=0)
-            inputs = inputs[1:]
+X_train, y_train = np.array(X_train), np.array(y_train)
+X_train = np.reshape(X_train, (X_train.shape[0], X_train.shape[1], 1))
 
-        predicted_prices = scaler.inverse_transform(np.array(forecast).reshape(-1,1))
-        future_dates = pd.date_range(df['Date'].iloc[-1], periods=31, freq='B')[1:]
+# LSTM
+model = Sequential()
+model.add(LSTM(units=50, return_sequences=True, input_shape=(X_train.shape[1],1)))
+model.add(LSTM(units=50))
+model.add(Dense(1))
 
-        fig2 = go.Figure()
-        fig2.add_trace(go.Scatter(x=df['Date'], y=df['Close'], mode='lines', name='Historical'))
-        fig2.add_trace(go.Scatter(x=future_dates, y=predicted_prices.flatten(), mode='lines', name='Forecast'))
-        fig2.update_layout(
-            title=f"{crude} LSTM Forecast",
-            hovermode='x unified'
-        )
-        st.plotly_chart(fig2, use_container_width=True)
+model.compile(optimizer='adam', loss='mean_squared_error')
+model.fit(X_train, y_train, epochs=5, batch_size=1, verbose=0)
 
-st.caption("⚙️ Built with 💪 Streamlit, Yahoo Finance, HuggingFace Transformers, TensorFlow, NewsAPI.")
+inputs = scaled_data[-look_back:]
+preds = []
 
+for _ in range(14):
+    input_reshaped = np.reshape(inputs, (1, look_back, 1))
+    pred = model.predict(input_reshaped, verbose=0)
+    preds.append(pred[0,0])
+    inputs = np.append(inputs[1:], pred, axis=0)
 
+forecast_prices = scaler.inverse_transform(np.array(preds).reshape(-1,1))
+future_dates = pd.date_range(start=data['Date'].iloc[-1], periods=15, freq='D')[1:]
+
+df_forecast = pd.DataFrame({'Date': future_dates, 'Forecast': forecast_prices.flatten()})
+st.line_chart(df_forecast.set_index('Date'))
+
+st.success("✅ Done!")
+
+# ------------------------------------------
+st.caption("🔬 Built with PyTorch NLP + LSTM forecasting.")
