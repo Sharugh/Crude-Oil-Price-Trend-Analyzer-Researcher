@@ -20,7 +20,7 @@ from sklearn.preprocessing import MinMaxScaler
 st.set_page_config(page_title="🛢️ Crude Oil Researcher", layout="wide")
 st.title("🛢️ Crude Oil Price Researcher - Next-Gen Version")
 
-NEWSAPI_KEY = "YOUR_NEWSAPI_KEY"
+NEWSAPI_KEY = "3087034a13564f75bfc769c0046e729c"
 
 @st.cache_resource
 def load_summarizer():
