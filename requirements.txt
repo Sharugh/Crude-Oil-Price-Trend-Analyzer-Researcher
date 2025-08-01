@@ -3,9 +3,7 @@ pandas
 numpy
 yfinance
 plotly
+prophet
+requests
 transformers
 torch
-tensorflow
-scikit-learn
-requests
-protobuf>=6.31.1
