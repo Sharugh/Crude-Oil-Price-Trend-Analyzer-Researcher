@@ -15,7 +15,7 @@ warnings.filterwarnings("ignore")
 
 # ------------------------------------------
 # 🔑 Hardcoded NewsAPI Key
-NEWSAPI_KEY = "YOUR_NEWS_API_KEY"
+NEWSAPI_KEY = "3087034a13564f75bfc769c0046e729c"
 
 # ------------------------------------------
 # 1️⃣ Summarizer (PyTorch only)
