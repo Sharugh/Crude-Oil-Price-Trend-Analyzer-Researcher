@@ -22,14 +22,14 @@ and summarize the latest expert commentary and signals.
 """)
 
 # --------------------------------------------
-# 2️⃣ AUTH: set_credentials without Appkey
+# 2️⃣ AUTH: set_credentials (positional args only!)
 # --------------------------------------------
 
 username = os.getenv("SPGCI_USERNAME")
 password = os.getenv("SPGCI_PASSWORD")
 
-# ✅ Explicitly call set_credentials WITHOUT Appkey
-ci.set_credentials(username=username, password=password)
+# ✅ Correct: positional args
+ci.set_credentials(username, password)
 
 # --------------------------------------------
 # 3️⃣ SPGCI CLIENTS
@@ -46,14 +46,24 @@ st.sidebar.header("⚙️ Settings")
 
 commodity = "Crude oil"
 
-# Show all symbols for crude oil
+# Get all symbols for Crude oil
 symbols_df = mdd.get_symbols(commodity=commodity)
+
+if symbols_df.empty:
+    st.error("No symbols found for Crude oil. Please check your SPGCI access.")
+    st.stop()
+
 symbols = symbols_df['symbol'].unique().tolist()
 symbol = st.sidebar.selectbox("Select Crude Oil Symbol:", symbols)
 
-# Show Market Data Categories
+# Get Market Data Categories
 mdcs_df = mdd.get_mdcs(subscribed_only=True)
 mdcs = mdcs_df['mdc'].unique().tolist()
+
+if not mdcs:
+    st.error("No Market Data Categories found. Please check your SPGCI subscriptions.")
+    st.stop()
+
 mdc = st.sidebar.selectbox("Select Market Data Category (MDC):", mdcs)
 
 # --------------------------------------------
@@ -152,5 +162,4 @@ if st.button("Run Insights Research"):
         st.warning("⚠️ No relevant crude oil insights found at the moment.")
 
 st.info("✅ Ready! Data powered by SPGCI.")
-
 
