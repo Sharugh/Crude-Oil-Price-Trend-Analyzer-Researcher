@@ -31,11 +31,6 @@ ci.set_credentials("sharugh.a@spglobal.com", "T!mezone22")
 mdd = ci.MarketData()
 ni = ci.Insights()
 
-)
-
-mdd = ci.MarketData()
-ni = ci.Insights()
-
 # --------------------------------------------
 # 3️⃣ NLP Summarizer
 # --------------------------------------------
@@ -190,3 +185,4 @@ if st.button("Run Research"):
                     st.markdown(f"- [{row['headline']}]({row['url']})")
 
 st.info("✅ All done! Platts Connect is powering your crude oil analysis 🚀")
+
