@@ -25,10 +25,12 @@ pulls **live market data**, and runs AI-powered research using NewsAPI + Insight
 # 2️⃣ Platts Connect Setup (Hardcoded for testing only!)
 # --------------------------------------------
 
-# ⚠️ Hardcode credentials for testing — REMOVE after testing!
-ci.set_credentials(
-    username="sharugh.a@spglobal.com",
-    password="T!mezone22",
+# ✅ Correct positional args — no keywords!
+ci.set_credentials("sharugh.a@spglobal.com", "T!mezone22")
+
+mdd = ci.MarketData()
+ni = ci.Insights()
+
 )
 
 mdd = ci.MarketData()
