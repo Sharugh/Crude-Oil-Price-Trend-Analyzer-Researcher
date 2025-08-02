@@ -1,167 +1,165 @@
 import streamlit as st
 import pandas as pd
-import spgci as ci
+import numpy as np
+import yfinance as yf
+import plotly.graph_objects as go
+from prophet import Prophet
 import requests
 from transformers import pipeline
 from datetime import datetime, timedelta
-import plotly.graph_objects as go
 
 # --------------------------------------------
-# 1️⃣ App Config
+# 1️⃣ APP CONFIG & KEYS
 # --------------------------------------------
 
-st.set_page_config(
-    page_title="🛢️ Crude Oil Trend Analyzer with Platts",
-    layout="wide"
-)
+st.set_page_config(page_title="Crude Oil Price Researcher", layout="wide")
 
-st.title("🛢️ Real-Time Crude Oil Price Analyzer & Researcher (Platts Connect)")
+st.title("🛢️ Advanced Real-Time Crude Oil Trend Analyzer & Researcher")
 st.write("""
-This advanced dashboard connects **directly** to Platts Connect via the `spgci` SDK,  
-pulls **live market data**, and runs AI-powered research using NewsAPI + Insights.
+This tool tracks global crude oil prices, forecasts future trends,  
+and explains **why** the trends are happening using real-time news scraping and NLP.
 """)
 
-# --------------------------------------------
-# 2️⃣ Platts Connect Setup (Hardcoded for testing only!)
-# --------------------------------------------
+# ✅ Hardcoded API KEY - Replace with your own NewsAPI key!
+NEWSAPI_KEY = "3087034a13564f75bfc769c0046e729c"
 
-# ✅ Correct positional args — no keywords!
-ci.set_credentials("sharugh.a@spglobal.com", "T!mezone22")
-
-mdd = ci.MarketData()
-ni = ci.Insights()
-
-# --------------------------------------------
-# 3️⃣ NLP Summarizer
-# --------------------------------------------
-
+# Initialize NLP summarizer (transformers)
 @st.cache_resource
 def load_summarizer():
     return pipeline("summarization", model="sshleifer/distilbart-cnn-12-6")
-
 summarizer = load_summarizer()
 
 # --------------------------------------------
-# 4️⃣ Sidebar Selection Panel
+# 2️⃣ USER SELECTION PANEL
 # --------------------------------------------
 
 st.sidebar.header("⚙️ Settings")
 
-# Get all crude oil symbols via Platts Connect
-crude_symbols_df = mdd.get_symbols(commodity="Crude oil")
-crude_symbols = crude_symbols_df['symbol'].unique().tolist()
+# Select Crude Oil Type
+crude = st.sidebar.selectbox(
+    "Select Crude Oil Benchmark:",
+    ["Brent", "WTI"],
+    index=0
+)
+symbol_map = {
+    "Brent": "BZ=F",
+    "WTI": "CL=F"
+}
+symbol = symbol_map[crude]
 
-selected_symbol = st.sidebar.selectbox(
-    "Select Crude Oil Symbol from Platts:",
-    crude_symbols
+# Timeframe buttons & manual date range
+st.sidebar.subheader("🗓️ Time Range")
+
+time_options = {
+    "1 Week": "7d",
+    "2 Weeks": "14d",
+    "1 Month": "1mo",
+    "6 Months": "6mo",
+    "1 Year": "1y",
+    "2 Years": "2y",
+    "5 Years": "5y"
+}
+time_label = st.sidebar.radio(
+    "Quick Select:",
+    list(time_options.keys()),
+    index=4
+)
+period = time_options[time_label]
+
+# --------------------------------------------
+# 3️⃣ FETCH PRICE DATA
+# --------------------------------------------
+
+@st.cache_data(ttl=3600)
+def get_price_data(symbol, period):
+    df = yf.download(symbol, period=period, interval='1d')
+    df.reset_index(inplace=True)
+    df['Rolling_5D'] = df['Close'].rolling(window=5).mean()
+    df.dropna(inplace=True)
+    return df
+
+st.info(f"Fetching {crude} price data for: **{time_label}** ...")
+df = get_price_data(symbol, period)
+
+# --------------------------------------------
+# 4️⃣ MAIN INTERACTIVE PLOT
+# --------------------------------------------
+
+st.subheader(f"📊 {crude} Crude Oil Trend")
+
+fig = go.Figure()
+
+# Main line
+fig.add_trace(go.Scatter(
+    x=df['Date'],
+    y=df['Close'],
+    mode='lines+markers',
+    name='Daily Close',
+    line=dict(color='royalblue', width=2)
+))
+
+# 5-day rolling avg
+fig.add_trace(go.Scatter(
+    x=df['Date'],
+    y=df['Rolling_5D'],
+    mode='lines',
+    name='5-Day Rolling Avg',
+    line=dict(color='orange', dash='dot')
+))
+
+# Chart options: time buttons, slider, hover mode
+fig.update_layout(
+    hovermode='x unified',
+    xaxis=dict(
+        rangeselector=dict(
+            buttons=list([
+                dict(count=7, label="1W", step="day", stepmode="backward"),
+                dict(count=14, label="2W", step="day", stepmode="backward"),
+                dict(count=1, label="1M", step="month", stepmode="backward"),
+                dict(count=6, label="6M", step="month", stepmode="backward"),
+                dict(count=1, label="1Y", step="year", stepmode="backward"),
+                dict(count=2, label="2Y", step="year", stepmode="backward"),
+                dict(count=5, label="5Y", step="year", stepmode="backward"),
+                dict(step="all")
+            ])
+        ),
+        rangeslider=dict(visible=True),
+        type="date"
+    ),
+    yaxis_title="Price (USD/barrel)",
+    title=f"{crude} Crude Oil Closing Prices"
 )
 
-# Time range (simple: last X days)
-st.sidebar.subheader("🗓️ Time Range")
-days_back = st.sidebar.slider("Number of past days to view:", 7, 90, 30)
+st.plotly_chart(fig, use_container_width=True)
 
 # --------------------------------------------
-# 5️⃣ Fetch Market Data
+# 5️⃣ SMART RESEARCH & NLP
 # --------------------------------------------
 
-st.info(f"🔄 Fetching market data for `{selected_symbol}` from Platts...")
+st.subheader("🔍 Intelligent Research: Why did the trend move?")
 
-# Pull assessments for selected symbol & MDC
-mdcs_df = mdd.get_mdcs()
-symbol_mdc = mdcs_df.iloc[0]['mdc']  # Use first MDC for demo — refine as needed
+if st.button("Run Market Research"):
+    st.info("⏳ Fetching latest news & analyzing... Please wait.")
+    today = datetime.today().strftime('%Y-%m-%d')
+    week_ago = (datetime.today() - timedelta(days=7)).strftime('%Y-%m-%d')
 
-assessments_df = mdd.get_assessments_by_symbol(selected_symbol)
-assessments_df['timestamp'] = pd.to_datetime(assessments_df['timestamp'])
-assessments_df = assessments_df.sort_values('timestamp')
+    search_terms = f"{crude} crude oil price OR OPEC OR supply OR conflict OR energy policy"
 
-# Filter by time window
-today = datetime.utcnow()
-past_date = today - timedelta(days=days_back)
-assessments_df = assessments_df[
-    assessments_df['timestamp'] >= past_date
-]
+    url = f"https://newsapi.org/v2/everything?q={search_terms}&from={week_ago}&to={today}&sortBy=publishedAt&apiKey={NEWSAPI_KEY}&language=en"
 
-# If empty, warn
-if assessments_df.empty:
-    st.warning(f"⚠️ No data found for the last {days_back} days.")
-else:
-    st.success(f"✅ Retrieved {len(assessments_df)} price points.")
-
-    # --------------------------------------------
-    # 6️⃣ Price Chart
-    # --------------------------------------------
-
-    st.subheader(f"📈 Price Trend for `{selected_symbol}`")
-
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=assessments_df['timestamp'],
-        y=assessments_df['price'],
-        mode='lines+markers',
-        name='Platts Price',
-        line=dict(color='royalblue', width=2)
-    ))
-
-    fig.update_layout(
-        hovermode='x unified',
-        title=f"Platts Price Assessment - {selected_symbol}",
-        yaxis_title="Price (USD/barrel)",
-        xaxis_title="Date",
-        xaxis=dict(rangeslider=dict(visible=True))
-    )
-
-    st.plotly_chart(fig, use_container_width=True)
-
-# --------------------------------------------
-# 7️⃣ Smart Research Block — NewsAPI + Insights
-# --------------------------------------------
-
-st.subheader("🔍 AI Research: What’s driving the market?")
-
-if st.button("Run Research"):
-    with st.spinner("⏳ Fetching NewsAPI + Platts Insights..."):
-
-        # ----------- NewsAPI -----------
-        today = datetime.today().strftime('%Y-%m-%d')
-        week_ago = (datetime.today() - timedelta(days=7)).strftime('%Y-%m-%d')
-
-        search_terms = f"{selected_symbol} crude oil price OR OPEC OR supply OR conflict OR energy policy"
-        NEWSAPI_KEY = "3087034a13564f75bfc769c0046e729c"  # ✅ Your real NewsAPI key
-
-        url = (
-            f"https://newsapi.org/v2/everything?q={search_terms}"
-            f"&from={week_ago}&to={today}&sortBy=publishedAt&apiKey={NEWSAPI_KEY}&language=en"
-        )
-        response = requests.get(url)
-
-        news_articles = []
-        if response.status_code == 200:
-            news_articles = response.json().get('articles', [])
+    response = requests.get(url)
+    if response.status_code == 200:
+        articles = response.json().get('articles', [])
+        if not articles:
+            st.warning("⚠️ No relevant news found for the past week.")
         else:
-            st.warning("⚠️ NewsAPI failed. Check your API key.")
+            st.success(f"🔗 Found {len(articles)} related news articles.")
+            combined_text = ""
+            for art in articles[:5]:
+                combined_text += f"{art['title']}. {art.get('description','')} "
 
-        # ----------- Platts Insights -----------
-        insights_df = ni.get_stories(
-            q=selected_symbol,
-            content_type=ni.ContentType.MarketCommentary
-        )
-
-        # Combine all text
-        combined_text = ""
-
-        if news_articles:
-            for art in news_articles[:5]:
-                combined_text += f"{art['title']}. {art.get('description', '')} "
-
-        if not insights_df.empty:
-            for idx, row in insights_df.head(5).iterrows():
-                combined_text += f"{row['headline']}. {row.get('content','')} "
-
-        if not combined_text:
-            st.warning("❌ No articles or stories found.")
-        else:
-            # NLP Summarizer
-            st.info("🤖 Running NLP summarization ...")
+            # Run NLP summarizer
+            st.info("🤖 Running advanced NLP summarization ...")
             summary = summarizer(
                 combined_text,
                 max_length=250,
@@ -169,20 +167,81 @@ if st.button("Run Research"):
                 do_sample=False
             )[0]['summary_text']
 
-            st.write("### 📌 Summary Insights:")
+            st.write("### 📌 Key Drivers & Market Reasons:")
             st.write(summary)
 
-            # Sources — NewsAPI
-            if news_articles:
-                st.write("### 🔗 News Sources:")
-                for art in news_articles[:5]:
-                    st.markdown(f"- [{art['title']}]({art['url']})")
+            st.write("### 🔗 Sources:")
+            for art in articles[:5]:
+                st.markdown(f"- [{art['title']}]({art['url']})")
+    else:
+        st.error(f"❌ News API request failed. Status: {response.status_code}")
 
-            # Sources — Platts
-            if not insights_df.empty:
-                st.write("### 🔗 Platts Insights:")
-                for idx, row in insights_df.head(5).iterrows():
-                    st.markdown(f"- [{row['headline']}]({row['url']})")
+# --------------------------------------------
+# 6️⃣ FORECASTING BLOCK
+# --------------------------------------------
 
-st.info("✅ All done! Platts Connect is powering your crude oil analysis 🚀")
+st.subheader("📈 Advanced Forecasting: Predict Future Prices")
 
+if st.button("Run Forecast"):
+    st.info("⏳ Training forecasting model...")
+    data = df[['Date', 'Close']].rename(columns={'Date': 'ds', 'Close': 'y'})
+
+    model = Prophet(
+        daily_seasonality=True,
+        yearly_seasonality=True,
+        weekly_seasonality=True
+    )
+    model.fit(data)
+
+    # Select horizon
+    horizon_days = st.slider("Select forecast horizon (days):", 7, 365, 30)
+    future = model.make_future_dataframe(periods=horizon_days)
+    forecast = model.predict(future)
+
+    fig2 = go.Figure()
+
+    # Actual
+    fig2.add_trace(go.Scatter(
+        x=data['ds'],
+        y=data['y'],
+        mode='lines',
+        name='Actual'
+    ))
+
+    # Forecast line
+    fig2.add_trace(go.Scatter(
+        x=forecast['ds'],
+        y=forecast['yhat'],
+        mode='lines',
+        name='Forecast',
+        line=dict(color='green')
+    ))
+
+    # Confidence intervals
+    fig2.add_trace(go.Scatter(
+        x=forecast['ds'],
+        y=forecast['yhat_upper'],
+        mode='lines',
+        line=dict(width=0),
+        showlegend=False
+    ))
+    fig2.add_trace(go.Scatter(
+        x=forecast['ds'],
+        y=forecast['yhat_lower'],
+        mode='lines',
+        line=dict(width=0),
+        fill='tonexty',
+        fillcolor='rgba(0,255,0,0.2)',
+        name='Confidence Interval'
+    ))
+
+    fig2.update_layout(
+        title=f"{crude} Forecast for Next {horizon_days} Days",
+        hovermode='x unified',
+        yaxis_title="Price (USD/barrel)"
+    )
+
+    st.plotly_chart(fig2, use_container_width=True)
+    st.write(forecast[['ds', 'yhat', 'yhat_lower', 'yhat_upper']].tail())
+
+st.info("✅ Your advanced research dashboard is ready! Enjoy the insights. 👑")
