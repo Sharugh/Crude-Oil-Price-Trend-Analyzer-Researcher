@@ -22,12 +22,14 @@ pulls **live market data**, and runs AI-powered research using NewsAPI + Insight
 """)
 
 # --------------------------------------------
-# 2️⃣ Platts Connect Setup
+# 2️⃣ Platts Connect Setup (Hardcoded for testing only!)
 # --------------------------------------------
 
-# ⚙️ Make sure these ENV VARS are set:
-# export SPGCI_USERNAME="your_username"
-# export SPGCI_PASSWORD="your_password"
+# ⚠️ Hardcode credentials for testing — REMOVE after testing!
+ci.set_credentials(
+    username="sharugh.a@spglobal.com",
+    password="T!mezone22",
+)
 
 mdd = ci.MarketData()
 ni = ci.Insights()
@@ -127,7 +129,7 @@ if st.button("Run Research"):
         week_ago = (datetime.today() - timedelta(days=7)).strftime('%Y-%m-%d')
 
         search_terms = f"{selected_symbol} crude oil price OR OPEC OR supply OR conflict OR energy policy"
-        NEWSAPI_KEY = "3087034a13564f75bfc769c0046e729c"  # Replace with your real key!
+        NEWSAPI_KEY = "3087034a13564f75bfc769c0046e729c"  # ✅ Your real NewsAPI key
 
         url = (
             f"https://newsapi.org/v2/everything?q={search_terms}"
