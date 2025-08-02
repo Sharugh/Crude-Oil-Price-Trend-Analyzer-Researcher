@@ -1,7 +1,9 @@
 streamlit
-spgci
 pandas
+numpy
+yfinance
 plotly
-transformers
-torch>
+prophet
 requests
+transformers
+torch
