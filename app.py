@@ -1,5 +1,5 @@
 # --------------------------------------------
-# Crude Oil Researcher with SPGCI
+# Crude Oil Researcher with SPGCI (No Appkey)
 # --------------------------------------------
 
 import streamlit as st
@@ -7,6 +7,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import spgci as ci
 from transformers import pipeline
+import os
 
 # --------------------------------------------
 # 1️⃣ APP CONFIG
@@ -21,14 +22,24 @@ and summarize the latest expert commentary and signals.
 """)
 
 # --------------------------------------------
-# 2️⃣ SPGCI CLIENT
+# 2️⃣ AUTH: set_credentials without Appkey
+# --------------------------------------------
+
+username = os.getenv("SPGCI_USERNAME")
+password = os.getenv("SPGCI_PASSWORD")
+
+# ✅ Explicitly call set_credentials WITHOUT Appkey
+ci.set_credentials(username=username, password=password)
+
+# --------------------------------------------
+# 3️⃣ SPGCI CLIENTS
 # --------------------------------------------
 
 mdd = ci.MarketData()
 ni = ci.Insights()
 
 # --------------------------------------------
-# 3️⃣ USER SELECTION PANEL
+# 4️⃣ USER SELECTION PANEL
 # --------------------------------------------
 
 st.sidebar.header("⚙️ Settings")
@@ -46,7 +57,7 @@ mdcs = mdcs_df['mdc'].unique().tolist()
 mdc = st.sidebar.selectbox("Select Market Data Category (MDC):", mdcs)
 
 # --------------------------------------------
-# 4️⃣ GET MARKET DATA
+# 5️⃣ GET MARKET DATA
 # --------------------------------------------
 
 st.subheader(f"📊 {commodity} Market Assessments")
@@ -76,7 +87,7 @@ else:
     st.plotly_chart(fig, use_container_width=True)
 
 # --------------------------------------------
-# 5️⃣ INSIGHTS & NLP SUMMARIZATION
+# 6️⃣ INSIGHTS & NLP SUMMARIZATION
 # --------------------------------------------
 
 st.subheader("🔍 Latest SPGCI Insights for Crude Oil")
